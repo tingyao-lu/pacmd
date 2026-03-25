@@ -6,7 +6,7 @@
 # ------------------------------------------------------
 
 import numpy as np
-from func import asym_pot
+from func import asym_pot,normal_mode
 from eom import force
 
 P = 32 # number of beads
@@ -43,10 +43,10 @@ p = np.zeros((P,))
 pc = 
 qc = np.sum(q)/P
 # normal modes for beads
-qj
-Cjn =  # ring-polymer normal mode transformation matrix
-Qn =  # normal mode coord
-Pn =  # internal mode mom
+qj = 
+C =  normal_mode(P) # normal mode transformation matrix Cjk
+Q =  C.T @ q # normal mode pos
+P =  # internal mode mom
 
 
 rNHC = 
@@ -59,8 +59,9 @@ Zc = np.sum(np.exp(-beta_P * Ham)) if qc == np.sum(q)/P else None
 pmf = np.ln(Zc)/beta
 
 
-#initialization
-
+# initialization
+# MB sampling of initial velocity
+# 
 
 for i in range(nsteps):
     qj = qc + np.sum(Cjn*Qn)
