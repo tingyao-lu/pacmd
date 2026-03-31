@@ -1,79 +1,112 @@
 # ------------------------------------------------------
 #
-# ACMD code with normal mode transformation and normal mode thermostatting
+# PACMD code with normal mode transformation and normal mode thermostatting
 # This is to reproduce Hone, Rossky, and Voth's JCP paper in 2006
 #
 # ------------------------------------------------------
 
 import numpy as np
-from func import asym_pot,normal_mode
-from eom import force
-
-P = 32 # number of beads
-M = 3 # NHC no.
-
-#--------------------------------------
-# index: 
-# j, bead index; 1 to P
-# k, normal mode index; 0 to P-1
-# s, NHC index; 1 to M
-#--------------------------------------
+from func import forcespr, forcequad, normal_mode, pot, vvint
+from openmm import NoseHooverChain
+import matplotlib.pyplot as plt
 
 # parameters
+P = 32 # beads no.
+M = 3 # NHC no.
 nsteps = 10000
 kb=1
 hbar=1
 m=1
-
-
-#beta = 1/(kb*T)
-beta = 8
+beta = 8  #beta = 1/(kb*T)
+T=1/(kb*beta) # 0.125 a.u.
 beta_P = beta/P
-n = np.arange(P-1)
-omega_P = P/(beta*hbar)
-omega_n = 2*omega_P*np.sin(n*np.pi/P) # internal mode frequencies
-Omega_n = 
-mn = m*omega_n**2/Omega_n**2 # internal mode mass
 gamma = 0.4 # adiabatic separation
+dt=0.01
 
-# beads
-q = np.zeros((P,))
-p = np.zeros((P,))
-# centroid
-pc = 
-qc = np.sum(q)/P
+k = np.arange(0,P+1) # normal mode index, 0 to P
+omega_k = 2*P/(beta*hbar)*np.sin(k*np.pi/P)  # internal mode frequencies [P, ], eq23
+omega_k[0] = 0 # set k=0 mode frequency to zero to avoid singularity
+Omega = P**(P/(P-1))/(beta*hbar) # scalar
+
+m_k = m * omega_k**2 / Omega**2 # [P+1, ]
+m_k[0] = m # set k=0 mode mass to physical mass
+
+# centroid and beads positions and momenta
+q, p = np.zeros((nsteps,P+1)), np.zeros((nsteps,P+1)) # [nsteps,P+1]
+
 # normal modes for beads
-qj = 
-C =  normal_mode(P) # normal mode transformation matrix Cjk
-Q =  C.T @ q # normal mode pos
-P =  # internal mode mom
+C =  normal_mode(P) # normal mode transformation matrix Cjk [P,P]
+# Vectorized transform for all timesteps: (nsteps, P) @ (P, P) -> (nsteps, P)
+Q = q[:,1:] @ C   # [nsteps, P]
+Pnm = p[:,1:] @ C # [nsteps, P]
 
+# forces
+f = np.zeros((nsteps,P+1)) #[nsteps,P+1]
 
-rNHC = 
-pNHC = 
-mNHC = 
-
-
-Zc = np.sum(np.exp(-beta_P * Ham)) if qc == np.sum(q)/P else None
-
-pmf = np.ln(Zc)/beta
-
-
+#----------------
 # initialization
-# MB sampling of initial velocity
-# 
+#----------------
+q_init = np.zeros(P) #[P,]
+p_init = m_k[1:]*np.random.normal(0,1/np.sqrt(beta_P*m_k[1:]),P) #[P,]
 
-for i in range(nsteps):
-    qj = qc + np.sum(Cjn*Qn)
-    Fj = force(asym_pot(qj, c, g), qj) #bead force
+q_init[0] = 0 # set centroid position to zero
+p_init[0] = 0 # set centroid momentum to zero
 
-    ham(p,m,m,P,lambda,a,pot,U,hbar,beta)
+#beads
+p[0,1:] = p_init
+q[0,1:] = q_init
+Pnm[0,:] = C.T @ p[0,1:]
+Q[0,:] = C.T @ q[0,1:]
 
-    Fc = np.sum(Fj)/P # centroid force
-    Fn = -m*omega_n**2*Qn + np.sum(Cjn*Fj)/P # normal mode force 
+#centroid
+p[0,0]=np.sum(p[0,1:])/P
+q[0,0]=np.sum(q[0,1:])/P
 
-    # propagation
-    
+#force = f(ext)+f(spr)
+f[0,0] = forcequad(q[0,0]) + forcespr(omega_k[0], m_k[0], p[0,0])
+f[0,1:] = forcequad(Q[0,:]) + forcespr(omega_k[1:], m_k[1:], Pnm[0,:])
+
+
+#----------------
+# propagation
+#----------------
+i = 0
+for i in range(nsteps-1):
+    #beads
+    Q[i+1,:], f[i+1,1:], _, Pnm[i+1,:] = vvint(
+        Q[i,:], Pnm[i,:]/m_k[1:],f[i,1:],m_k[1:],dt,forcequad(Q[i,:]) + forcespr(omega_k[1:], m_k[1:], Pnm[i,:]))
+
+    # Keep centroid mode separate from internal normal modes.
+
+    p[i+1,1:] = C @ Pnm[i+1,:]
+    q[i+1,1:] = C @ Q[i+1,:]
+
+    if i == 0:
+        print('i = 1')
+        #print(Q[i+1,:])
+
+    #centroid
+    q[i+1,0] = np.sum(q[i+1,1:])/P
+    p[i+1,0] = np.sum(p[i+1,1:])/P
+    f[i+1,0] = forcequad(q[i+1,0])
+
+
+    Pnm[i+1,:] = C.T @ p[i+1,1:]
+    Q[i+1,:] = C.T @ q[i+1,1:]
+
+    i += 1
+
+#print(qc)
+steplist = np.arange(nsteps)
+#plt.plot(steplist, pot(steplist))
+plt.plot(steplist, q[:,0])
+plt.xlabel('Time step')
+plt.ylabel('Centroid position')
+plt.title('Centroid Position vs Time')
+plt.show()
+
+
+
 
 
 
